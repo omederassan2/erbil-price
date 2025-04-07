@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>بحث المواد باستخدام API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        input[type="text"] {
+            width: 80%;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 15px;
+            margin-left: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: right;
+        }
+        .item-display {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: right;
+        }
+        .total-display {
+            margin-top: 10px;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>بحث المواد</h1>
+    <input type="text" id="search" placeholder="أدخل رمز المادة...">
+    <button id="searchButton">بحث</button>
+    <div id="itemDisplay" class="item-display"></div>
+    <table id="results">
+        <thead>
+            <tr>
+                <th>المستودع</th>
+                <th>الرصيد</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <div id="totalDisplay" class="total-display"></div>
+
+    <script>
+        const apiKey = 'AIzaSyCqAvpuEBK2q0FKkWs8AyRSClmb5D5ts14'; // أدخل مفتاح API هنا
+        const spreadsheetId = '1QIm1H--0gW1G3dknoripeC6Ie2c_rkzPqZOcMgQ-yAY'; // أدخل معرف ورقة Google هنا
+        const range = 'Sheet2!A:D'; // نطاق البيانات في ورقة العمل
+
+        document.getElementById('searchButton').addEventListener('click', function() {
+            const query = document.getElementById('search').value.trim();
+            if (!query) {
+                alert("يرجى إدخال رمز المادة للبحث.");
+                return;
+            }
+
+            fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?key=${apiKey}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok: ' + response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // تصفية النتائج بناءً على التطابق الكامل مع رمز المادة
+                    const results = data.values.filter(row => row[0] === query);
+
+                    if (results.length > 0) {
+                        // عرض اسم المادة فوق الجدول (العمود الرابع يحتوي على اسم المادة)
+                        document.getElementById('itemDisplay').textContent = `المادة: ${results[0][3] || 'غير متوفر'}`;
+                    } else {
+                        document.getElementById('itemDisplay').textContent = "المادة: غير موجودة";
+                    }
+
+                    displayResults(results);
+                })
+                .catch(error => {
+                    console.error("خطأ في جلب البيانات:", error);
+                    alert("حدث خطأ أثناء جلب البيانات.");
+                });
+        });
+
+        function displayResults(results) {
+            const tbody = document.getElementById('results').querySelector('tbody');
+            tbody.innerHTML = '';
+            const totalDisplay = document.getElementById('totalDisplay');
+            let total = 0;
+
+            if (results.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2">لا توجد نتائج.</td></tr>';
+                totalDisplay.textContent = '';
+                return;
+            }
+
+            results.forEach(row => {
+                const tr = document.createElement('tr');
+                const warehouse = row[1] || 'غير متوفر';
+                const balance = parseFloat(row[2]) || 0;
+                total += balance;
+                tr.innerHTML = `<td>${warehouse}</td><td>${balance}</td>`;
+                tbody.appendChild(tr);
+            });
+
+            // عرض المجموع في أسفل الجدول
+            totalDisplay.textContent = `المجموع: ${total}`;
+        }
+    </script>
+</body>
+</html>
