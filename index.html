@@ -50,12 +50,10 @@
     button:hover {
       background-color: #45a049;
     }
-    #cameraPreview {
+    #cameraContainer {
       width: 100%;
       max-width: 400px;
       margin: 20px auto;
-      display: block;
-      border-radius: 8px;
     }
     .result {
       margin-top: 20px;
@@ -65,11 +63,13 @@
       font-size: 18px;
     }
   </style>
+  <!-- مكتبة html5-qrcode -->
+  <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 <body>
   <div class="container">
-      <h1 style="text-align: center;">اوميدي راسان</h1>
-    <h1 style="text-align: center;">اسعار فرع اربيل</h1>
+     <h1 style="text-align: center;">اوميدي راسان</h1>
+    <h1 style="text-align: center;">اسعار فرع-اربيل</h1>
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="أدخل كود المادة أو الباركود...">
       <div class="buttons">
@@ -81,12 +81,9 @@
     <div class="result" id="result"></div>
   </div>
 
-  <!-- ZXing مكتبة -->
-  <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
-
   <script>
     const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyFI5iWwWkxrJmL7zZRA0VYDm68dV8QkA4fqp4qQFZ28eWwLHBB_CWEpBAAPQLbVbHS/exec';
-    let codeReader = null;
+    let html5QrCode;
 
     async function fetchProductData(code) {
       try {
@@ -121,42 +118,55 @@
       }
     }
 
-    async function startBarcodeScanner() {
-      const cameraContainer = document.getElementById('cameraContainer');
-      cameraContainer.innerHTML = '<video id="cameraPreview" autoplay playsinline muted></video>';
-      const selectedDeviceId = null;
-
-      try {
-        codeReader = new ZXing.BrowserMultiFormatReader();
-        const devices = await codeReader.listVideoInputDevices();
-
-        if (devices.length === 0) throw new Error('لا توجد كاميرات متاحة');
-
-        const selectedDeviceId = devices[0].deviceId;
-
-        codeReader.decodeFromVideoDevice(selectedDeviceId, 'cameraPreview', (result, err) => {
-          if (result) {
-            document.getElementById('searchInput').value = result.text;
-            stopCamera();
-            searchProduct();
-          }
+    function stopCamera() {
+      if (html5QrCode) {
+        html5QrCode.stop().then(() => {
+          document.getElementById("cameraContainer").innerHTML = "";
+        }).catch(err => {
+          console.error("فشل في إيقاف الكاميرا", err);
         });
-      } catch (err) {
-        console.error('Error accessing camera:', err);
-        cameraContainer.innerHTML = '<p style="color: red;">تعذر الوصول إلى الكاميرا</p>';
       }
     }
 
-    function stopCamera() {
-      if (codeReader) {
-        codeReader.reset();
-        document.getElementById('cameraContainer').innerHTML = '';
+    async function startBarcodeScanner() {
+      const cameraContainer = document.getElementById("cameraContainer");
+      cameraContainer.innerHTML = "";
+
+      html5QrCode = new Html5Qrcode("cameraContainer");
+
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length) {
+          const backCamera = devices.find(device => device.label.toLowerCase().includes('back')) || devices[0];
+
+          html5QrCode.start(
+            backCamera.id,
+            {
+              fps: 10,
+              qrbox: 250,
+              facingMode: "environment"
+            },
+            (decodedText, decodedResult) => {
+              document.getElementById('searchInput').value = decodedText;
+              stopCamera();
+              searchProduct();
+            },
+            (errorMessage) => {
+              // ممكن تجاهل الأخطاء البسيطة
+            }
+          );
+        } else {
+          cameraContainer.innerHTML = "<p style='color:red;'>لا يوجد كاميرا متاحة</p>";
+        }
+      } catch (err) {
+        console.error("خطأ في الكاميرا:", err);
+        cameraContainer.innerHTML = "<p style='color:red;'>تعذر تشغيل الكاميرا</p>";
       }
     }
 
     // ربط الأزرار
-    document.getElementById('searchButton').addEventListener('click', searchProduct);
-    document.getElementById('scanButton').addEventListener('click', startBarcodeScanner);
+    document.getElementById("searchButton").addEventListener("click", searchProduct);
+    document.getElementById("scanButton").addEventListener("click", startBarcodeScanner);
   </script>
 </body>
 </html>
