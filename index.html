@@ -1,17 +1,16 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>بحث المواد</title>
+    <title>بحث المواد اربيل</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             padding: 20px;
             background-color: #f5f5f5;
         }
-        
+
         .container {
             max-width: 800px;
             margin: 0 auto;
@@ -20,14 +19,14 @@
             border-radius: 10px;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
-        
+
         .search-box {
             display: flex;
             flex-direction: column;
             gap: 15px;
             margin-bottom: 20px;
         }
-        
+
         input[type="text"] {
             width: 100%;
             padding: 15px;
@@ -36,13 +35,13 @@
             border-radius: 8px;
             box-sizing: border-box;
         }
-        
+
         .buttons {
             display: flex;
             gap: 10px;
             justify-content: center;
         }
-        
+
         button {
             padding: 15px 30px;
             font-size: 18px;
@@ -53,11 +52,11 @@
             cursor: pointer;
             transition: background-color 0.3s;
         }
-        
+
         button:hover {
             background-color: #45a049;
         }
-        
+
         #cameraPreview {
             width: 100%;
             max-width: 400px;
@@ -65,7 +64,7 @@
             display: block;
             border-radius: 8px;
         }
-        
+
         .result {
             margin-top: 20px;
             padding: 20px;
@@ -78,7 +77,7 @@
 <body>
     <div class="container">
         <h1 style="text-align: center;">بحث في المواد</h1>
-        
+
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="أدخل كود المادة أو الباركود...">
             <div class="buttons">
@@ -91,33 +90,35 @@
         <div class="result" id="result"></div>
     </div>
 
-    <script>
+    <!-- مكتبة ZXing -->
+    <script type="module">
+        import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/esm/index.min.js';
+
         const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyFI5iWwWkxrJmL7zZRA0VYDm68dV8QkA4fqp4qQFZ28eWwLHBB_CWEpBAAPQLbVbHS/exec';
-        let stream = null;
+        let codeReader = null;
 
         async function fetchProductData(code) {
-    try {
-        const response = await fetch(`${GOOGLE_SCRIPT_URL}?code=${code}&sheet=Sheet2`);
-        const data = await response.json();
-        return data;
-    } catch (error) {
-        console.error('Error:', error);
-        return null;
-    }
-}
-
+            try {
+                const response = await fetch(`${GOOGLE_SCRIPT_URL}?code=${code}&sheet=Sheet2`);
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Error:', error);
+                return null;
+            }
+        }
 
         async function searchProduct() {
             const code = document.getElementById('searchInput').value;
             const resultDiv = document.getElementById('result');
-            
+
             if (!code) {
                 resultDiv.innerHTML = '<p style="color: red;">الرجاء إدخال كود المادة أو الباركود</p>';
                 return;
             }
 
             const product = await fetchProductData(code);
-            
+
             if (product && product.status === 'success') {
                 resultDiv.innerHTML = `
                     <h3>${product.name}</h3>
@@ -131,30 +132,25 @@
 
         async function startBarcodeScanner() {
             const cameraContainer = document.getElementById('cameraContainer');
-            cameraContainer.innerHTML = '<video id="cameraPreview" autoplay playsinline></video>';
-            
+            cameraContainer.innerHTML = '<video id="cameraPreview" autoplay playsinline muted></video>';
             const video = document.getElementById('cameraPreview');
-            
+
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                video.srcObject = stream;
-                
-                const barcodeDetector = new BarcodeDetector({ formats: ['ean_13', 'code_128', 'qr_code'] });
-                
-                const scanInterval = setInterval(async () => {
-                    try {
-                        const barcodes = await barcodeDetector.detect(video);
-                        if (barcodes.length > 0) {
-                            const barcode = barcodes[0].rawValue;
-                            document.getElementById('searchInput').value = barcode;
-                            stopCamera();
-                            clearInterval(scanInterval);
-                            searchProduct();
-                        }
-                    } catch (err) {
-                        console.log('Error scanning barcode:', err);
+                codeReader = new BrowserMultiFormatReader();
+                const devices = await codeReader.listVideoInputDevices();
+                const selectedDeviceId = devices[0]?.deviceId;
+
+                if (!selectedDeviceId) {
+                    throw new Error("لم يتم العثور على كاميرا");
+                }
+
+                codeReader.decodeFromVideoDevice(selectedDeviceId, 'cameraPreview', (result, err) => {
+                    if (result) {
+                        document.getElementById('searchInput').value = result.text;
+                        stopCamera();
+                        searchProduct();
                     }
-                }, 500);
+                });
             } catch (err) {
                 console.error('Error accessing camera:', err);
                 cameraContainer.innerHTML = '<p style="color: red;">تعذر الوصول إلى الكاميرا</p>';
@@ -162,11 +158,15 @@
         }
 
         function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
+            if (codeReader) {
+                codeReader.reset();
                 document.getElementById('cameraContainer').innerHTML = '';
             }
         }
+
+        // تعيين الدوال للعناصر العالمية
+        window.searchProduct = searchProduct;
+        window.startBarcodeScanner = startBarcodeScanner;
     </script>
 </body>
 </html>
