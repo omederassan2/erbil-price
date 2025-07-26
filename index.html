@@ -28,7 +28,7 @@
       gap: 15px;
       margin-bottom: 25px;
     }
-    input[type="text"] {
+    input[type="text"], input[type="number"] {
       padding: 15px;
       font-size: 18px;
       border: 1px solid #ccc;
@@ -86,13 +86,72 @@
       color: red;
       font-weight: bold;
     }
+    .order-section {
+      margin-top: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 10px;
+      border: 1px solid #ddd;
+    }
+    .order-section h3 {
+      margin-top: 0;
+      color: #333;
+      text-align: center;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    #submitOrder {
+      width: 100%;
+      background-color: #007bff;
+    }
+    #submitOrder:hover {
+      background-color: #0056b3;
+    }
+    #submitOrder:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
+    }
+
+    @media (max-width: 600px) {
+      .order-section .form-group {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .order-section .form-group input {
+        width: 80%;
+        text-align: center;
+      }
+    }
+
+    #notification {
+      display: none;
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #28a745;
+      color: white;
+      padding: 12px 25px;
+      border-radius: 8px;
+      font-size: 18px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      z-index: 1000;
+      transition: opacity 0.3s ease;
+    }
   </style>
   <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 <body>
   <div class="container">
-    <h1>أومیدی راسان</h1>
-    <h2>فرع أربيل - الأسعار والمخزون</h2>
+    <h1>شركة أومیدی راسان</h1>
+    <h2>فرع اربيل - الأسعار والمخزون</h2>
 
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="أدخل كود المادة أو الباركود...">
@@ -104,13 +163,57 @@
 
     <div id="cameraContainer"></div>
     <div class="result" id="result"></div>
+
+    <div class="order-section" id="orderSection" style="display: none;">
+      <h3>إدخال الطلب</h3>
+      <div class="form-group">
+        <label for="itemCode">كود المادة:</label>
+        <input type="text" id="itemCode" readonly>
+      </div>
+      <div class="form-group">
+        <label for="quantity">الكمية:</label>
+        <input type="number" id="quantity" placeholder="أدخل الكمية (أرقام فقط)" min="1" inputmode="numeric" pattern="[0-9]*" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+      </div>
+      <div class="form-group">
+        <label for="price">السعر:</label>
+        <input type="text" id="price" placeholder="أدخل السعر" inputmode="decimal" pattern="[0-9.,]*" oninput="formatPrice(this)">
+      </div>
+      <button id="submitOrder">إرسال الطلب</button>
+    </div>
   </div>
+
+  <!-- إشعار الإرسال -->
+  <div id="notification">✅ تم إرسال الطلب بنجاح</div>
 
   <script>
     const PRICE_API_URL = 'https://script.google.com/macros/s/AKfycbyFI5iWwWkxrJmL7zZRA0VYDm68dV8QkA4fqp4qQFZ28eWwLHBB_CWEpBAAPQLbVbHS/exec';
     const STOCK_API_URL = 'https://script.google.com/macros/s/AKfycbxeWytcbPgkPdUUX71LQQw9GhzvsLbOOzj41NAb9feMpRUEwYaUwAICCCgrD8GgslECkQ/exec';
+    const ORDER_API_URL = 'https://script.google.com/macros/s/AKfycbwG9Y3ntgmMhCqXbnfhz_IijKGYfJN4SgTQrI3VrBvLpXHAH6EULIfrltJZ8F93L4nZ/exec'; // استبدل بالرابط الخاص بك
 
     let html5QrCode;
+    let currentItemData = null;
+
+    function formatPrice(input) {
+      let value = input.value.replace(/[^\d]/g, '');
+      if (value.length > 0) {
+        value = parseInt(value, 10).toLocaleString('en-US');
+      }
+      input.value = value;
+    }
+
+    function showNotification(message = "✅ تم إرسال الطلب بنجاح") {
+      const notification = document.getElementById("notification");
+      notification.textContent = message;
+      notification.style.display = "block";
+      notification.style.opacity = 1;
+
+      setTimeout(() => {
+        notification.style.opacity = 0;
+        setTimeout(() => {
+          notification.style.display = "none";
+        }, 300);
+      }, 1000);
+    }
 
     async function fetchPrices(code) {
       try {
@@ -135,43 +238,59 @@
     async function searchAll() {
       const code = document.getElementById("searchInput").value.trim();
       const resultDiv = document.getElementById("result");
+      const orderSection = document.getElementById("orderSection");
 
       if (!code) {
         resultDiv.innerHTML = "<p class='error'>يرجى إدخال كود المادة أو استخدام الكاميرا.</p>";
+        orderSection.style.display = 'none';
+        currentItemData = null;
         return;
       }
 
-      resultDiv.innerHTML = "<p class='loading'>⏳ جاري البحث...</p>";
+      resultDiv.innerHTML = "<p class='loading'>⏳ جاري البحث عن السعر...</p>";
+      orderSection.style.display = 'none';
+      currentItemData = null;
 
-      const [priceData, stockData] = await Promise.all([
-        fetchPrices(code),
-        fetchStock(code)
-      ]);
+      const priceData = await fetchPrices(code);
 
       let html = "";
 
       if (priceData && priceData.status === 'success') {
         html += `<h3>${priceData.name}</h3>`;
         html += `<p><strong>سعر الجملة:</strong> ${priceData.wholesale}</p>`;
+        html += `<p><strong>سعر المفرد:</strong> ${priceData.retail}</p>`;
+
+        currentItemData = {
+          code: code,
+          name: priceData.name,
+          price: priceData.retail
+        };
+
+        document.getElementById("itemCode").value = code;
+        document.getElementById("price").value = "";
+        document.getElementById("quantity").value = "";
+        orderSection.style.display = 'block';
       } else {
         html += "<p class='error'>⚠️ لم يتم العثور على الأسعار.</p>";
-      }
-
-      if (stockData && stockData.length > 0) {
-        let total = 0;
-        html += `<h4>الرصيد في المستودعات:</h4>`;
-        html += `<table><tr><th>المستودع</th><th>الرصيد</th></tr>`;
-        stockData.forEach(item => {
-          html += `<tr><td>${item.warehouse}</td><td>${item.balance}</td></tr>`;
-          total += parseFloat(item.balance) || 0;
-        });
-        html += `<tr><th>المجموع</th><th>${total}</th></tr>`;
-        html += `</table>`;
-      } else {
-        html += "<p class='error'>⚠️ لا يوجد رصيد في المستودعات.</p>";
+        currentItemData = null;
       }
 
       resultDiv.innerHTML = html;
+
+      const stockData = await fetchStock(code);
+      if (stockData && stockData.length > 0) {
+        let total = 0;
+        let stockHtml = `<h4>الرصيد في المستودعات:</h4>`;
+        stockHtml += `<table><tr><th>المستودع</th><th>الرصيد</th></tr>`;
+        stockData.forEach(item => {
+          stockHtml += `<tr><td>${item.warehouse}</td><td>${item.balance}</td></tr>`;
+          total += parseFloat(item.balance) || 0;
+        });
+        stockHtml += `<tr><th>المجموع</th><th>${total}</th></tr></table>`;
+        resultDiv.innerHTML += stockHtml;
+      } else {
+        resultDiv.innerHTML += "<p class='error'>⚠️ لا يوجد رصيد في المستودعات.</p>";
+      }
     }
 
     function stopCamera() {
@@ -194,7 +313,6 @@
         const devices = await Html5Qrcode.getCameras();
         if (devices && devices.length) {
           const camera = devices.find(device => device.label.toLowerCase().includes('back')) || devices[0];
-
           html5QrCode.start(
             camera.id,
             { fps: 10, qrbox: 250 },
@@ -214,8 +332,68 @@
       }
     }
 
+    async function submitOrder() {
+      const quantity = document.getElementById("quantity").value.trim();
+      const price = document.getElementById("price").value.replace(/,/g, '').trim();
+      const button = document.getElementById("submitOrder");
+
+      if (!currentItemData) {
+        alert("لم يتم تحديد مادة للطلب");
+        return;
+      }
+
+      if (!quantity || isNaN(quantity) || parseInt(quantity) <= 0) {
+        alert("يرجى إدخال كمية صحيحة (أرقام فقط)");
+        return;
+      }
+
+      if (!price || isNaN(price)) {
+        alert("يرجى إدخال سعر صحيح");
+        return;
+      }
+
+      const orderData = {
+        code: currentItemData.code,
+        quantity: quantity,
+        price: price,
+        date: new Date().toISOString()
+      };
+
+      button.disabled = true;
+      const originalText = button.textContent;
+      button.textContent = "⏳ جاري الإرسال...";
+
+      try {
+        const response = await fetch(ORDER_API_URL, {
+          method: 'POST',
+          body: JSON.stringify(orderData)
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+          showNotification(); // ✅ الإشعار بدل alert
+          document.getElementById("searchInput").value = '';
+          document.getElementById("quantity").value = '';
+          document.getElementById("price").value = '';
+          document.getElementById("result").innerHTML = '';
+          document.getElementById("orderSection").style.display = 'none';
+          currentItemData = null;
+        } else {
+          alert("❌ حدث خطأ أثناء إرسال الطلب: " + (result.message || ''));
+        }
+      } catch (error) {
+        console.error("Error submitting order:", error);
+        alert("❌ حدث خطأ أثناء إرسال الطلب");
+      }
+
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+
     document.getElementById("searchButton").addEventListener("click", searchAll);
     document.getElementById("scanButton").addEventListener("click", startBarcodeScanner);
+    document.getElementById("submitOrder").addEventListener("click", submitOrder);
   </script>
 </body>
 </html>
